@@ -16,6 +16,8 @@ import type {
   BiasRecord,
   DossierRecord,
   LessonRecord,
+  OutcomeRecord,
+  Predictor,
   PredictionRecord,
 } from "../types";
 import { parseMemoryRecord, toMemoryText } from "./format";
@@ -209,6 +211,75 @@ export async function recallContext(args: {
         : Promise.resolve([]),
     ]);
   return { lessons, homeDossier, awayDossier, pastCalls, userBias };
+}
+
+// ── Retrieval for grading, reveal, scoreboard & timeline ─────────────────────
+
+const PRED_QUERY = "world cup sealed prediction pick confidence outcome";
+
+function predictionNs(by: Predictor, uid?: string): string {
+  return by === "eva" ? NS.predictions : NS.userPredictions(uid as string);
+}
+
+function scoreboardNs(by: Predictor, uid?: string): string {
+  return by === "eva" ? NS.evaScoreboard : NS.userScoreboard(uid as string);
+}
+
+/**
+ * Find a specific prediction. MemWal recall is semantic-only, so we pull a wide
+ * top-K (the match id + team codes are in the text) and filter exactly by
+ * matchId. Fine while the prediction count is modest. (A metadata/exact-key
+ * filter on recall would make this cleaner — candidate MemWal feedback.)
+ */
+export async function findPrediction(args: {
+  matchId: string;
+  by: Predictor;
+  uid?: string;
+}): Promise<PredictionRecord | null> {
+  const recalled = await recallRecords<PredictionRecord>(
+    `prediction for match ${args.matchId} ${PRED_QUERY}`,
+    predictionNs(args.by, args.uid),
+    { topK: 40 },
+  );
+  const hit = recalled.find(
+    (r) => r.record.matchId === args.matchId && r.record.by === args.by,
+  );
+  return hit ? hit.record : null;
+}
+
+export async function recallPredictions(args: {
+  by: Predictor;
+  uid?: string;
+  limit?: number;
+}): Promise<PredictionRecord[]> {
+  const recalled = await recallRecords<PredictionRecord>(
+    PRED_QUERY,
+    predictionNs(args.by, args.uid),
+    { topK: args.limit ?? 50 },
+  );
+  return recalled.map((r) => r.record);
+}
+
+export function recordOutcome(record: OutcomeRecord, uid?: string) {
+  const lead = `${record.by === "eva" ? "EVA" : "User"} ${
+    record.correct ? "HIT" : "MISS"
+  } on ${record.homeCode} v ${record.awayCode}: picked ${record.pick}, actual ${
+    record.actual
+  }, brier ${record.brier.toFixed(3)}.`;
+  return rememberRecord(lead, record, scoreboardNs(record.by, uid));
+}
+
+export async function recallOutcomes(args: {
+  by: Predictor;
+  uid?: string;
+  limit?: number;
+}): Promise<OutcomeRecord[]> {
+  const recalled = await recallRecords<OutcomeRecord>(
+    "world cup result outcome hit miss brier score",
+    scoreboardNs(args.by, args.uid),
+    { topK: args.limit ?? 50 },
+  );
+  return recalled.map((r) => r.record);
 }
 
 export function health() {

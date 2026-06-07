@@ -5,11 +5,10 @@
  * next prediction visibly sharper.
  */
 
-import { generateObject } from "ai";
 import { z } from "zod";
 import type { EvaPrediction } from "./predict";
 import type { Fixture, FinalResult, Outcome } from "../types";
-import { evaModel } from "./models";
+import { generateStructured } from "./generate";
 
 const ScoutNoteSchema = z.object({
   note: z.string().describe("One concrete observation from this match."),
@@ -41,9 +40,7 @@ export async function postmortem(args: {
   actual: Outcome;
 }): Promise<Postmortem> {
   const { fixture, prediction, result, actual } = args;
-  const { object } = await generateObject({
-    model: evaModel(),
-    schema: PostmortemSchema,
+  return generateStructured(PostmortemSchema, {
     system: SYSTEM,
     prompt: `Fixture: ${fixture.homeTeam} vs ${fixture.awayTeam}${
       fixture.stage ? ` (${fixture.stage})` : ""
@@ -53,5 +50,4 @@ Actual result: ${fixture.homeTeam} ${result.homeScore}–${result.awayScore} ${f
 
 Distill the lesson and a scouting note for each team.`,
   });
-  return object;
 }

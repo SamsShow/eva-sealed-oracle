@@ -14,7 +14,7 @@
     "verify:memwal": "tsx scripts/verify-credentials.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.41",
+    "@ai-sdk/openai-compatible": "^2.0.48",
     "@ai-sdk/react": "^3.0.39",
     "@mysten-incubation/memwal": "0.0.7",
     "@mysten/seal": "^1.1.0",

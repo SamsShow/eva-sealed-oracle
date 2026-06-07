@@ -88,9 +88,38 @@ export function getManualResult(matchId: string): FinalResult | null {
   return manualResults.get(matchId) ?? null;
 }
 
+/** A few fixtures so the full loop is usable before the football key is wired.
+ *  Resolve these manually (enter the score). */
+function demoFixtures(): Fixture[] {
+  const mk = (
+    n: number,
+    homeTeam: string,
+    homeCode: string,
+    awayTeam: string,
+    awayCode: string,
+    kickoff: string,
+    stage: string,
+  ): Fixture => ({
+    matchId: `WC-DEMO-${n}`,
+    homeTeam,
+    homeCode,
+    awayTeam,
+    awayCode,
+    kickoff,
+    stage,
+    status: "SCHEDULED",
+  });
+  return [
+    mk(1, "Brazil", "BRA", "Croatia", "CRO", "2026-06-12T18:00:00Z", "Group C"),
+    mk(2, "Spain", "ESP", "Morocco", "MAR", "2026-06-13T18:00:00Z", "Group E"),
+    mk(3, "Argentina", "ARG", "Mexico", "MEX", "2026-06-14T18:00:00Z", "Group D"),
+  ];
+}
+
 /** Fetch all WC fixtures. Falls back to FOOTBALL_FALLBACK_URL (e.g. an
- *  openfootball worldcup JSON) and finally to an empty list. */
+ *  openfootball worldcup JSON) and finally to demo fixtures. */
 export async function getFixtures(): Promise<Fixture[]> {
+  if (!isConfigured()) return demoFixtures();
   try {
     const data = await fdRequest<{ matches: FdMatch[] }>(
       `/competitions/${COMPETITION}/matches`,
@@ -100,6 +129,12 @@ export async function getFixtures(): Promise<Fixture[]> {
     console.warn("[football] primary fixtures fetch failed:", err);
     return fallbackFixtures();
   }
+}
+
+/** Find a single fixture by id (from the fixtures list). */
+export async function getFixture(matchId: string): Promise<Fixture | null> {
+  const fixtures = await getFixtures();
+  return fixtures.find((f) => f.matchId === matchId) ?? null;
 }
 
 /** Resolve a single fixture's final result. Manual override wins. */

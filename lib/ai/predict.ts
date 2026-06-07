@@ -4,12 +4,11 @@
  * so memory's effect on the call is observable in the UI.
  */
 
-import { generateObject } from "ai";
 import { z } from "zod";
 import type { FixtureContext } from "../memwal/client";
 import type { Fixture } from "../types";
 import { buildContextBlock } from "./context";
-import { evaModel } from "./models";
+import { generateStructured } from "./generate";
 
 const PredictionSchema = z.object({
   pick: z.enum(["HOME", "DRAW", "AWAY"]),
@@ -42,9 +41,7 @@ export async function predict(
   context: FixtureContext,
 ): Promise<EvaPrediction> {
   const contextBlock = buildContextBlock(context);
-  const { object } = await generateObject({
-    model: evaModel(),
-    schema: PredictionSchema,
+  return generateStructured(PredictionSchema, {
     system: SYSTEM,
     prompt: `Fixture: ${fixture.homeTeam} (home) vs ${fixture.awayTeam} (away)${
       fixture.stage ? `, ${fixture.stage}` : ""
@@ -54,5 +51,4 @@ ${contextBlock}
 
 Make your sealed prediction now. List in appliedLessons which remembered lessons you used and how each changed your pick or confidence.`,
   });
-  return object;
 }

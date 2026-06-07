@@ -78,3 +78,20 @@ export interface BiasRecord {
   tendencies: string[];
   updatedAt: string;
 }
+
+/** A graded outcome, stored to the scoreboard namespace. */
+export interface OutcomeRecord {
+  type: "outcome";
+  by: Predictor;
+  matchId: string;
+  homeCode: string;
+  awayCode: string;
+  pick: Outcome;
+  confidence: number;
+  actual: Outcome;
+  correct: boolean;
+  brier: number;
+  homeScore: number;
+  awayScore: number;
+  createdAt: string;
+}
