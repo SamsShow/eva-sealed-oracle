@@ -1,48 +1,47 @@
 /**
- * Extract the first *parseable* JSON object from arbitrary model output.
- * Local models often wrap JSON in prose or ```json fences (and prose may itself
- * contain braces) — so we try each `{` as a candidate start, balance-scan to its
- * matching `}` (string-aware, so braces inside strings don't count), and return
- * the first candidate that parses.
+ * Extract a JSON object from arbitrary model output.
+ *
+ * Returns the LAST complete, parseable top-level object — reasoning models
+ * (Qwen3, etc.) emit their thinking first and the real answer last, and prose
+ * may contain earlier brace fragments or schema examples. String-aware, so
+ * braces inside string values don't affect matching.
  */
 export function extractJson(text: string): unknown | null {
   const cleaned = text.replace(/```(?:json)?/gi, "");
-  for (
-    let start = cleaned.indexOf("{");
-    start >= 0;
-    start = cleaned.indexOf("{", start + 1)
-  ) {
-    const parsed = tryParseFrom(cleaned, start);
-    if (parsed !== undefined) return parsed;
-  }
-  return null;
-}
 
-function tryParseFrom(text: string, start: number): unknown | undefined {
   let depth = 0;
+  let start = -1;
   let inString = false;
   let escaped = false;
+  let last: unknown | null = null;
 
-  for (let i = start; i < text.length; i++) {
-    const c = text[i];
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
     if (inString) {
       if (escaped) escaped = false;
       else if (c === "\\") escaped = true;
       else if (c === '"') inString = false;
       continue;
     }
-    if (c === '"') inString = true;
-    else if (c === "{") depth++;
-    else if (c === "}") {
+    if (c === '"') {
+      inString = true;
+    } else if (c === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === "}" && depth > 0) {
       depth--;
-      if (depth === 0) {
+      if (depth === 0 && start >= 0) {
         try {
-          return JSON.parse(text.slice(start, i + 1));
+          const parsed = JSON.parse(cleaned.slice(start, i + 1));
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            last = parsed;
+          }
         } catch {
-          return undefined;
+          // Not valid JSON from this top-level group; keep scanning.
         }
+        start = -1;
       }
     }
   }
-  return undefined;
+  return last;
 }

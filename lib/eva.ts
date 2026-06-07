@@ -19,10 +19,8 @@ import {
   recallContext,
   recallOutcomes,
   recallRaw,
-  recordOutcome,
+  recordLearnings,
   sealPrediction,
-  storeLesson,
-  updateDossier,
 } from "./memwal/client";
 import type { RecalledRecord } from "./memwal/client";
 import type {
@@ -215,8 +213,12 @@ export async function resolveMatch(input: ResolveInput) {
   const actual = resultOutcome(result.homeScore, result.awayScore);
   const evaPred = await findPrediction({ matchId: input.matchId, by: "eva" });
 
+  const outcomes: { record: OutcomeRecord; uid?: string }[] = [];
   let evaGrade: { correct: boolean; brier: number } | null = null;
+  let userGrade: { correct: boolean; brier: number } | null = null;
   let lesson: Awaited<ReturnType<typeof postmortem>>["lesson"] | null = null;
+  let lessonRecord: LessonRecord | undefined;
+  let dossiers: DossierRecord[] | undefined;
 
   if (evaPred) {
     const g = gradePrediction(
@@ -224,9 +226,9 @@ export async function resolveMatch(input: ResolveInput) {
       result,
     );
     evaGrade = { correct: g.correct, brier: g.brier };
-    await recordOutcome(
-      toOutcomeRecord("eva", evaPred, result, actual, g.brier, g.correct),
-    );
+    outcomes.push({
+      record: toOutcomeRecord("eva", evaPred, result, actual, g.brier, g.correct),
+    });
 
     if (!g.correct || g.brier > 0.7) {
       const fx = (await getFixture(input.matchId)) ?? fixtureFromRecord(evaPred);
@@ -242,31 +244,32 @@ export async function resolveMatch(input: ResolveInput) {
         actual,
       });
       lesson = pm.lesson;
-      await storeLesson({
+      lessonRecord = {
         type: "lesson",
         ...pm.lesson,
         fromMatchId: input.matchId,
         teams: [evaPred.homeCode, evaPred.awayCode],
         createdAt: nowIso(),
-      });
-      await updateDossier({
-        type: "dossier",
-        team: evaPred.homeCode,
-        note: pm.homeNote.note,
-        tags: pm.homeNote.tags,
-        updatedAt: nowIso(),
-      });
-      await updateDossier({
-        type: "dossier",
-        team: evaPred.awayCode,
-        note: pm.awayNote.note,
-        tags: pm.awayNote.tags,
-        updatedAt: nowIso(),
-      });
+      };
+      dossiers = [
+        {
+          type: "dossier",
+          team: evaPred.homeCode,
+          note: pm.homeNote.note,
+          tags: pm.homeNote.tags,
+          updatedAt: nowIso(),
+        },
+        {
+          type: "dossier",
+          team: evaPred.awayCode,
+          note: pm.awayNote.note,
+          tags: pm.awayNote.tags,
+          updatedAt: nowIso(),
+        },
+      ];
     }
   }
 
-  let userGrade: { correct: boolean; brier: number } | null = null;
   if (input.uid) {
     const userPred = await findPrediction({
       matchId: input.matchId,
@@ -279,12 +282,15 @@ export async function resolveMatch(input: ResolveInput) {
         result,
       );
       userGrade = { correct: g.correct, brier: g.brier };
-      await recordOutcome(
-        toOutcomeRecord("user", userPred, result, actual, g.brier, g.correct),
-        input.uid,
-      );
+      outcomes.push({
+        record: toOutcomeRecord("user", userPred, result, actual, g.brier, g.correct),
+        uid: input.uid,
+      });
     }
   }
+
+  // One bulk write for all learnings — stays well under the rate limit.
+  await recordLearnings({ outcomes, lesson: lessonRecord, dossiers });
 
   return { resolved: true as const, result, actual, evaGrade, userGrade, lesson };
 }
@@ -388,16 +394,14 @@ export interface MemorySnapshot {
 
 /** A live read of everything EVA is storing on Walrus, for the inspector. */
 export async function getMemorySnapshot(uid?: string): Promise<MemorySnapshot> {
-  const [evaPreds, userPreds, lessons, evaOut, userOut] = await Promise.all([
+  // Kept lean to respect the relayer's weighted rate limit.
+  const [evaPreds, userPreds, lessons, evaOut] = await Promise.all([
     recallRaw<PredictionRecord>("EVA sealed prediction pick confidence", NS.predictions, { topK: 50 }),
     uid
       ? recallRaw<PredictionRecord>("user sealed prediction pick", NS.userPredictions(uid), { topK: 50 })
       : Promise.resolve([]),
     recallRaw<LessonRecord>("lesson rule adjustment failure mode", NS.lessons, { topK: 50 }),
     recallRaw<OutcomeRecord>("outcome result hit miss brier", NS.evaScoreboard, { topK: 50 }),
-    uid
-      ? recallRaw<OutcomeRecord>("outcome result hit miss brier", NS.userScoreboard(uid), { topK: 50 })
-      : Promise.resolve([]),
   ]);
 
   const teams = new Set<string>();
@@ -405,25 +409,16 @@ export async function getMemorySnapshot(uid?: string): Promise<MemorySnapshot> {
     if (p.record.homeCode) teams.add(p.record.homeCode);
     if (p.record.awayCode) teams.add(p.record.awayCode);
   }
-  for (const o of evaOut) {
-    if (o.record.homeCode) teams.add(o.record.homeCode);
-    if (o.record.awayCode) teams.add(o.record.awayCode);
-  }
   const dossiers = (
     await Promise.all(
       [...teams]
-        .slice(0, 8)
+        .slice(0, 3)
         .map((t) => recallRaw<DossierRecord>(`${t} scouting note form`, NS.dossier(t), { topK: 5 })),
     )
   ).flat();
 
   const total =
-    evaPreds.length +
-    userPreds.length +
-    lessons.length +
-    dossiers.length +
-    evaOut.length +
-    userOut.length;
+    evaPreds.length + userPreds.length + lessons.length + dossiers.length + evaOut.length;
 
   return {
     account:
@@ -433,7 +428,7 @@ export async function getMemorySnapshot(uid?: string): Promise<MemorySnapshot> {
     predictions: { eva: evaPreds, user: userPreds },
     lessons,
     dossiers,
-    outcomes: { eva: evaOut, user: userOut },
+    outcomes: { eva: evaOut, user: [] },
     total,
   };
 }

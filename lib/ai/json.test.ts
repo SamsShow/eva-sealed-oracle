@@ -25,4 +25,10 @@ describe("extractJson", () => {
   it("returns null when there is no JSON object", () => {
     expect(extractJson("I think Brazil will win, no doubt.")).toBeNull();
   });
+
+  it("returns the LAST object when several are present (reasoning models put the answer last)", () => {
+    const text =
+      'The schema is like {"pick":"HOME"}. After thinking, my answer is {"pick":"AWAY","confidence":80}';
+    expect(extractJson(text)).toEqual({ pick: "AWAY", confidence: 80 });
+  });
 });

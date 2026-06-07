@@ -40,8 +40,10 @@ export async function postmortem(args: {
   actual: Outcome;
 }): Promise<Postmortem> {
   const { fixture, prediction, result, actual } = args;
+  const shape = `{"lesson":{"rule":"<reusable forecasting rule, not a match recap>","failureMode":"<what went wrong in your reasoning>","adjustment":"<concrete change for future calls>","appliesWhen":"<conditions this rule should fire>"},"homeNote":{"note":"<one concrete observation about ${fixture.homeTeam}>","tags":["<short tag>","<short tag>"]},"awayNote":{"note":"<one concrete observation about ${fixture.awayTeam}>","tags":["<short tag>","<short tag>"]}}`;
   return generateStructured(PostmortemSchema, {
     system: SYSTEM,
+    shape,
     prompt: `Fixture: ${fixture.homeTeam} vs ${fixture.awayTeam}${
       fixture.stage ? ` (${fixture.stage})` : ""
     }.

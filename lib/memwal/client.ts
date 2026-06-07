@@ -71,6 +71,10 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
+      // Don't retry rate limits — it only burns more of the quota.
+      if (/429|rate limit/i.test(err instanceof Error ? err.message : String(err))) {
+        throw err;
+      }
       if (i < attempts - 1) await sleep(baseDelayMs * 2 ** i);
     }
   }
@@ -181,36 +185,30 @@ export async function recallContext(args: {
   uid?: string;
 }): Promise<FixtureContext> {
   const fixtureQuery = `${args.homeTeam} vs ${args.awayTeam} ${args.stage ?? ""} form strengths weaknesses ranking upsets`;
-  const [lessons, homeDossier, awayDossier, pastCalls, userBias] =
-    await Promise.all([
-      recallRecords<LessonRecord>(fixtureQuery, NS.lessons, {
-        topK: 3,
-        maxDistance: 0.45,
-      }),
-      recallRecords<DossierRecord>(
-        `${args.homeTeam} recent form weaknesses strengths`,
-        NS.dossier(args.homeCode),
-        { topK: 3 },
-      ),
-      recallRecords<DossierRecord>(
-        `${args.awayTeam} recent form weaknesses strengths`,
-        NS.dossier(args.awayCode),
-        { topK: 3 },
-      ),
-      recallRecords<PredictionRecord>(
-        `EVA past prediction ${args.homeTeam} ${args.awayTeam} outcome confidence`,
-        NS.predictions,
-        { topK: 5 },
-      ),
-      args.uid
-        ? recallRecords<BiasRecord>(
-            "user prediction tendencies bias",
-            NS.userBias(args.uid),
-            { topK: 2 },
-          )
-        : Promise.resolve([]),
-    ]);
-  return { lessons, homeDossier, awayDossier, pastCalls, userBias };
+  // Kept to 4 recalls per commit to stay under the relayer's weighted rate
+  // limit. (User-bias recall dropped — that namespace isn't written yet.)
+  const [lessons, homeDossier, awayDossier, pastCalls] = await Promise.all([
+    recallRecords<LessonRecord>(fixtureQuery, NS.lessons, {
+      topK: 3,
+      maxDistance: 0.45,
+    }),
+    recallRecords<DossierRecord>(
+      `${args.homeTeam} recent form weaknesses strengths`,
+      NS.dossier(args.homeCode),
+      { topK: 3 },
+    ),
+    recallRecords<DossierRecord>(
+      `${args.awayTeam} recent form weaknesses strengths`,
+      NS.dossier(args.awayCode),
+      { topK: 3 },
+    ),
+    recallRecords<PredictionRecord>(
+      `EVA past prediction ${args.homeTeam} ${args.awayTeam} outcome confidence`,
+      NS.predictions,
+      { topK: 5 },
+    ),
+  ]);
+  return { lessons, homeDossier, awayDossier, pastCalls, userBias: [] };
 }
 
 // ── Retrieval for grading, reveal, scoreboard & timeline ─────────────────────
@@ -260,13 +258,47 @@ export async function recallPredictions(args: {
   return recalled.map((r) => r.record);
 }
 
+function outcomeLead(r: OutcomeRecord): string {
+  return `${r.by === "eva" ? "EVA" : "User"} ${
+    r.correct ? "HIT" : "MISS"
+  } on ${r.homeCode} v ${r.awayCode}: picked ${r.pick}, actual ${r.actual}, brier ${r.brier.toFixed(3)}.`;
+}
+
 export function recordOutcome(record: OutcomeRecord, uid?: string) {
-  const lead = `${record.by === "eva" ? "EVA" : "User"} ${
-    record.correct ? "HIT" : "MISS"
-  } on ${record.homeCode} v ${record.awayCode}: picked ${record.pick}, actual ${
-    record.actual
-  }, brier ${record.brier.toFixed(3)}.`;
-  return rememberRecord(lead, record, scoreboardNs(record.by, uid));
+  return rememberRecord(outcomeLead(record), record, scoreboardNs(record.by, uid));
+}
+
+/**
+ * Write all of a match's learnings (outcome + lesson + dossiers + user outcome)
+ * in ONE bulk request, so resolve costs ~1 weighted write instead of ~5 —
+ * keeping us under the relayer's rate limit.
+ */
+export function recordLearnings(args: {
+  outcomes: { record: OutcomeRecord; uid?: string }[];
+  lesson?: LessonRecord;
+  dossiers?: DossierRecord[];
+}) {
+  const items: { text: string; namespace: string }[] = [];
+  for (const o of args.outcomes) {
+    items.push({
+      text: toMemoryText(outcomeLead(o.record), o.record),
+      namespace: scoreboardNs(o.record.by, o.uid),
+    });
+  }
+  if (args.lesson) {
+    items.push({
+      text: toMemoryText(lessonLead(args.lesson), args.lesson),
+      namespace: NS.lessons,
+    });
+  }
+  for (const d of args.dossiers ?? []) {
+    items.push({
+      text: toMemoryText(dossierLead(d), d),
+      namespace: NS.dossier(d.team),
+    });
+  }
+  if (items.length === 0) return Promise.resolve(null);
+  return withRetry(() => getClient().rememberBulkAndWait(items));
 }
 
 export async function recallOutcomes(args: {
