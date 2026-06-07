@@ -5,24 +5,30 @@ export function ProvenanceFooter() {
     : null;
 
   return (
-    <footer className="mt-10 border-t border-zinc-900 pt-5 text-xs text-zinc-500">
-      <p>
+    <footer className="mt-12 border-t border-[color:var(--line)] pt-6 text-xs text-faint">
+      <p className="max-w-2xl leading-relaxed">
         Every prediction, lesson and dossier is a memory in EVA&apos;s{" "}
-        <span className="text-emerald-400">MemWalAccount</span> on Sui mainnet —
-        encrypted blobs on Walrus. Memory is the seedling: proof that what was
-        learned persists.
+        <span className="font-medium text-[color:var(--seed)]">
+          MemWalAccount
+        </span>{" "}
+        on Sui mainnet — encrypted blobs on Walrus. Memory is the seedling: proof
+        that what was learned persists.
       </p>
       {explorer ? (
         <a
           href={explorer}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-2 inline-block text-sky-400 hover:underline"
+          className="mt-3 inline-flex items-center gap-1 font-medium text-[color:var(--accent)] hover:underline"
         >
-          View EVA&apos;s memory on the Sui explorer ↗ ({accountId?.slice(0, 10)}…)
+          View EVA&apos;s memory on the Sui explorer
+          <span className="mono text-faint">
+            ({accountId?.slice(0, 10)}…)
+          </span>
+          ↗
         </a>
       ) : (
-        <p className="mt-2 text-zinc-600">
+        <p className="mt-3 text-faint">
           Set NEXT_PUBLIC_MEMWAL_ACCOUNT_ID to show the explorer link.
         </p>
       )}
