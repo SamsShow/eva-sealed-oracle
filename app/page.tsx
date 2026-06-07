@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { BrierTimeline } from "@/components/BrierTimeline";
 import { EvaMark } from "@/components/EvaMark";
@@ -89,10 +90,18 @@ export default function Home() {
             <h1 className="text-4xl font-semibold tracking-tight">EVA</h1>
           </div>
         </div>
-        <span className="flex items-center gap-1.5 text-xs text-faint">
-          <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--seed)]" />
-          live
-        </span>
+        <div className="flex items-center gap-4 text-xs">
+          <Link
+            href="/docs"
+            className="font-medium text-[color:var(--accent)] hover:underline"
+          >
+            How it works
+          </Link>
+          <span className="flex items-center gap-1.5 text-faint">
+            <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--seed)]" />
+            live
+          </span>
+        </div>
       </header>
       <p className="rise mt-5 max-w-xl text-[15px] leading-relaxed text-muted">
         EVA seals every World Cup call on-chain before kickoff — proof she
