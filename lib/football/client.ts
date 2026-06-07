@@ -1,81 +1,110 @@
 /**
- * Football data for the World Cup.
+ * Football data for the World Cup, from TheSportsDB — a real, free API that
+ * needs no registration (the public test key "3" works; override with
+ * THESPORTSDB_KEY). FIFA World Cup is league 4429, season 2026.
  *
- * Primary source: football-data.org free tier (competition code `WC`,
- * 10 req/min). Because a free tier can lag during live matches, we support a
- * manual override (the user / demo can supply a result directly) and a soft
- * fallback fetch for fixtures. Everything is normalized to the shared
- * `Fixture` / `FinalResult` shapes.
- *
- * Server-only: reads FOOTBALL_DATA_API_KEY.
+ * Live scores populate `intHomeScore`/`intAwayScore` once matches kick off, so
+ * one season fetch gives both fixtures and results. A manual override and a
+ * small demo fallback keep the app usable if the API is unavailable.
  */
 
 import type { Fixture, FinalResult } from "../types";
 
-const FD_BASE = "https://api.football-data.org/v4";
-const COMPETITION = "WC";
+const KEY = process.env.THESPORTSDB_KEY || "3";
+const LEAGUE_ID = process.env.THESPORTSDB_LEAGUE_ID || "4429";
+const SEASON = process.env.THESPORTSDB_SEASON || "2026";
+const BASE = `https://www.thesportsdb.com/api/v1/json/${KEY}`;
 
 export function isConfigured(): boolean {
-  return Boolean(process.env.FOOTBALL_DATA_API_KEY);
+  return true; // the free test key always works
 }
 
-// ── football-data.org wire shapes (only the fields we use) ───────────────────
-
-interface FdTeam {
-  name: string | null;
-  tla: string | null;
-}
-interface FdMatch {
-  id: number;
-  utcDate: string;
-  status: string;
-  stage?: string;
-  group?: string | null;
-  homeTeam: FdTeam;
-  awayTeam: FdTeam;
-  score?: { fullTime?: { home: number | null; away: number | null } };
+interface SdbEvent {
+  idEvent: string;
+  strHomeTeam: string | null;
+  strAwayTeam: string | null;
+  intHomeScore: string | null;
+  intAwayScore: string | null;
+  strTimestamp: string | null;
+  dateEvent: string | null;
+  strTime: string | null;
+  strStatus: string | null;
+  strGroup: string | null;
+  strStage: string | null;
+  intRound: string | null;
 }
 
-function normalizeStatus(s: string): Fixture["status"] {
-  if (s === "FINISHED" || s === "AWARDED") return "FINISHED";
-  if (s === "IN_PLAY" || s === "PAUSED") return "IN_PLAY";
+// FIFA 3-letter codes for likely WC2026 nations (names as TheSportsDB returns
+// them). Fallback derives a code from the name.
+const NATION_CODES: Record<string, string> = {
+  Argentina: "ARG", Brazil: "BRA", France: "FRA", England: "ENG", Spain: "ESP",
+  Germany: "GER", Portugal: "POR", Netherlands: "NED", Belgium: "BEL",
+  Croatia: "CRO", Italy: "ITA", Mexico: "MEX", USA: "USA", "United States": "USA",
+  Canada: "CAN", Japan: "JPN", "South Korea": "KOR", Australia: "AUS",
+  Morocco: "MAR", Senegal: "SEN", Ghana: "GHA", Nigeria: "NGA", Cameroon: "CMR",
+  Egypt: "EGY", Tunisia: "TUN", Algeria: "ALG", "South Africa": "RSA",
+  "Ivory Coast": "CIV", "Cote d'Ivoire": "CIV", Uruguay: "URU", Colombia: "COL",
+  Ecuador: "ECU", Peru: "PER", Chile: "CHI", Paraguay: "PAR", Switzerland: "SUI",
+  Denmark: "DEN", Sweden: "SWE", Poland: "POL", Serbia: "SRB",
+  "Czech Republic": "CZE", Austria: "AUT", Ukraine: "UKR", Wales: "WAL",
+  Scotland: "SCO", Turkey: "TUR", Greece: "GRE", Norway: "NOR",
+  "Saudi Arabia": "KSA", Iran: "IRN", Qatar: "QAT", Iraq: "IRQ",
+  "United Arab Emirates": "UAE", Jordan: "JOR", Uzbekistan: "UZB",
+  "Bosnia-Herzegovina": "BIH", Hungary: "HUN", Romania: "ROU",
+  "Costa Rica": "CRC", Panama: "PAN", Jamaica: "JAM", Honduras: "HON",
+  "New Zealand": "NZL", "Cape Verde": "CPV", Curacao: "CUW",
+};
+
+function codeFor(name: string | null): string {
+  if (!name) return "TBD";
+  if (NATION_CODES[name]) return NATION_CODES[name];
+  return name.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 3) || "TBD";
+}
+
+const FINISHED = new Set(["FT", "AET", "PEN", "AOT", "Match Finished"]);
+const LIVE = new Set(["1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INPLAY"]);
+
+function normalizeStatus(s: string | null): Fixture["status"] {
+  if (s && FINISHED.has(s)) return "FINISHED";
+  if (s && LIVE.has(s)) return "IN_PLAY";
   return "SCHEDULED";
 }
 
-function codeFor(team: FdTeam): string {
-  if (team.tla) return team.tla.toUpperCase();
-  return (team.name ?? "TBD").slice(0, 3).toUpperCase();
+function kickoffIso(e: SdbEvent): string {
+  if (e.strTimestamp) {
+    // TheSportsDB timestamps are UTC without a zone marker.
+    return e.strTimestamp.endsWith("Z") ? e.strTimestamp : `${e.strTimestamp}Z`;
+  }
+  return `${e.dateEvent ?? "2026-06-11"}T${e.strTime ?? "00:00:00"}Z`;
 }
 
-function toFixture(m: FdMatch): Fixture {
+function toFixture(e: SdbEvent): Fixture {
   return {
-    matchId: `WC-${m.id}`,
-    homeTeam: m.homeTeam.name ?? "TBD",
-    homeCode: codeFor(m.homeTeam),
-    awayTeam: m.awayTeam.name ?? "TBD",
-    awayCode: codeFor(m.awayTeam),
-    kickoff: m.utcDate,
-    stage: m.group ?? m.stage,
-    status: normalizeStatus(m.status),
+    matchId: `WC-${e.idEvent}`,
+    homeTeam: e.strHomeTeam ?? "TBD",
+    homeCode: codeFor(e.strHomeTeam),
+    awayTeam: e.strAwayTeam ?? "TBD",
+    awayCode: codeFor(e.strAwayTeam),
+    kickoff: kickoffIso(e),
+    stage:
+      e.strGroup ||
+      e.strStage ||
+      (e.intRound ? `Matchday ${e.intRound}` : undefined),
+    status: normalizeStatus(e.strStatus),
   };
 }
 
-async function fdRequest<T>(path: string): Promise<T> {
-  const key = process.env.FOOTBALL_DATA_API_KEY;
-  if (!key) throw new Error("FOOTBALL_DATA_API_KEY not set");
-  const res = await fetch(`${FD_BASE}${path}`, {
-    headers: { "X-Auth-Token": key },
-    // Fixtures change slowly; cache for a minute to respect the rate limit.
-    next: { revalidate: 60 },
-  });
-  if (!res.ok) {
-    throw new Error(`football-data.org ${path} -> ${res.status}`);
-  }
-  return (await res.json()) as T;
+async function fetchSeason(): Promise<SdbEvent[]> {
+  const res = await fetch(
+    `${BASE}/eventsseason.php?id=${LEAGUE_ID}&s=${SEASON}`,
+    { next: { revalidate: 60 } },
+  );
+  if (!res.ok) throw new Error(`TheSportsDB ${res.status}`);
+  const data = (await res.json()) as { events: SdbEvent[] | null };
+  return data.events ?? [];
 }
 
-/** In-process manual overrides. Note: ephemeral in serverless — the resolve
- *  route persists the graded outcome to memory, which is the durable record. */
+// ── Manual overrides (ephemeral; resolve persists graded outcomes to memory) ──
 const manualResults = new Map<string, FinalResult>();
 
 export function setManualResult(result: Omit<FinalResult, "source">): FinalResult {
@@ -88,83 +117,56 @@ export function getManualResult(matchId: string): FinalResult | null {
   return manualResults.get(matchId) ?? null;
 }
 
-/** A few fixtures so the full loop is usable before the football key is wired.
- *  Resolve these manually (enter the score). */
-function demoFixtures(): Fixture[] {
-  const mk = (
-    n: number,
-    homeTeam: string,
-    homeCode: string,
-    awayTeam: string,
-    awayCode: string,
-    kickoff: string,
-    stage: string,
-  ): Fixture => ({
-    matchId: `WC-DEMO-${n}`,
-    homeTeam,
-    homeCode,
-    awayTeam,
-    awayCode,
-    kickoff,
-    stage,
-    status: "SCHEDULED",
-  });
-  return [
-    mk(1, "Brazil", "BRA", "Croatia", "CRO", "2026-06-12T18:00:00Z", "Group C"),
-    mk(2, "Spain", "ESP", "Morocco", "MAR", "2026-06-13T18:00:00Z", "Group E"),
-    mk(3, "Argentina", "ARG", "Mexico", "MEX", "2026-06-14T18:00:00Z", "Group D"),
-  ];
-}
-
-/** Fetch all WC fixtures. Falls back to FOOTBALL_FALLBACK_URL (e.g. an
- *  openfootball worldcup JSON) and finally to demo fixtures. */
 export async function getFixtures(): Promise<Fixture[]> {
-  if (!isConfigured()) return demoFixtures();
   try {
-    const data = await fdRequest<{ matches: FdMatch[] }>(
-      `/competitions/${COMPETITION}/matches`,
-    );
-    return data.matches.map(toFixture);
+    const events = await fetchSeason();
+    const fixtures = events.map(toFixture);
+    return fixtures.length ? fixtures : demoFixtures();
   } catch (err) {
-    console.warn("[football] primary fixtures fetch failed:", err);
-    return fallbackFixtures();
+    console.warn("[football] season fetch failed:", err);
+    return demoFixtures();
   }
 }
 
-/** Find a single fixture by id (from the fixtures list). */
 export async function getFixture(matchId: string): Promise<Fixture | null> {
   const fixtures = await getFixtures();
   return fixtures.find((f) => f.matchId === matchId) ?? null;
 }
 
-/** Resolve a single fixture's final result. Manual override wins. */
 export async function getResult(matchId: string): Promise<FinalResult | null> {
   const manual = getManualResult(matchId);
   if (manual) return manual;
 
   const id = matchId.replace(/^WC-/, "");
   try {
-    const m = await fdRequest<FdMatch>(`/matches/${id}`);
-    const ft = m.score?.fullTime;
-    if (normalizeStatus(m.status) !== "FINISHED" || ft?.home == null || ft?.away == null) {
-      return null;
-    }
-    return { matchId, homeScore: ft.home, awayScore: ft.away, source: "api" };
+    const events = await fetchSeason();
+    const e = events.find((x) => x.idEvent === id);
+    if (!e || normalizeStatus(e.strStatus) !== "FINISHED") return null;
+    if (e.intHomeScore == null || e.intAwayScore == null) return null;
+    return {
+      matchId,
+      homeScore: Number(e.intHomeScore),
+      awayScore: Number(e.intAwayScore),
+      source: "api",
+    };
   } catch (err) {
     console.warn(`[football] result fetch failed for ${matchId}:`, err);
     return null;
   }
 }
 
-async function fallbackFixtures(): Promise<Fixture[]> {
-  const url = process.env.FOOTBALL_FALLBACK_URL;
-  if (!url) return [];
-  try {
-    const res = await fetch(url, { next: { revalidate: 3600 } });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { matches?: FdMatch[] };
-    return (data.matches ?? []).map(toFixture);
-  } catch {
-    return [];
-  }
+/** Fallback fixtures if the API is unreachable. */
+function demoFixtures(): Fixture[] {
+  const mk = (
+    n: number, ht: string, hc: string, at: string, ac: string, ko: string, stage: string,
+  ): Fixture => ({
+    matchId: `WC-DEMO-${n}`,
+    homeTeam: ht, homeCode: hc, awayTeam: at, awayCode: ac,
+    kickoff: ko, stage, status: "SCHEDULED",
+  });
+  return [
+    mk(1, "Brazil", "BRA", "Croatia", "CRO", "2026-06-12T18:00:00Z", "Group C"),
+    mk(2, "Spain", "ESP", "Morocco", "MAR", "2026-06-13T18:00:00Z", "Group E"),
+    mk(3, "Argentina", "ARG", "Mexico", "MEX", "2026-06-14T18:00:00Z", "Group D"),
+  ];
 }
