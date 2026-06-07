@@ -17,6 +17,11 @@
 * {
   box-sizing: border-box;
 }
+html {
+  /* EVA is a light, premium surface — opt out of browser/OS forced dark mode
+     so the design renders as intended everywhere. */
+  color-scheme: light;
+}
 html,
 body {
   margin: 0;
