@@ -53,11 +53,11 @@ function Verdict({ correct }: { correct: boolean | null }) {
 export function MatchCard({
   fixture,
   uid,
-  onResolved,
+  onChanged,
 }: {
   fixture: Fixture;
   uid: string;
-  onResolved: () => void;
+  onChanged: () => void;
 }) {
   const [pick, setPick] = useState<Outcome | null>(null);
   const [confidence, setConfidence] = useState(60);
@@ -92,6 +92,7 @@ export function MatchCard({
         userConfidence: confidence,
       });
       setPhase("sealed");
+      onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed");
       setPhase("idle");
@@ -120,7 +121,7 @@ export function MatchCard({
       const revData = (await rev.json()) as Reveal;
       setReveal({ ...revData, lesson: rd.lesson });
       setPhase("revealed");
-      onResolved();
+      onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed");
       setPhase("sealed");

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BrierTimeline } from "@/components/BrierTimeline";
 import { EvaMark } from "@/components/EvaMark";
 import { MatchCard, type Fixture } from "@/components/MatchCard";
+import { MemoryPanel } from "@/components/MemoryPanel";
 import { ProvenanceFooter } from "@/components/ProvenanceFooter";
 import { Scoreboard } from "@/components/Scoreboard";
 import { getUid } from "@/lib/uid";
@@ -37,6 +38,7 @@ export default function Home() {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [board, setBoard] = useState<ScoreboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [memBump, setMemBump] = useState(0);
 
   useEffect(() => {
     setUid(getUid());
@@ -51,6 +53,11 @@ export default function Home() {
       /* leave previous board */
     }
   }, [uid]);
+
+  const handleChanged = useCallback(() => {
+    refreshBoard();
+    setMemBump((b) => b + 1);
+  }, [refreshBoard]);
 
   useEffect(() => {
     if (!uid) return;
@@ -70,7 +77,8 @@ export default function Home() {
   }, [uid, refreshBoard]);
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12">
+    <div className="mx-auto max-w-6xl px-5 py-12 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-8">
+      <main>
       <header className="rise flex items-center justify-between">
         <div className="flex items-center gap-4">
           <EvaMark />
@@ -115,13 +123,18 @@ export default function Home() {
               key={f.matchId}
               fixture={f}
               uid={uid}
-              onResolved={refreshBoard}
+              onChanged={handleChanged}
             />
           ))}
         </div>
       )}
 
       <ProvenanceFooter />
-    </main>
+      </main>
+
+      <aside className="mt-8 lg:mt-0 lg:sticky lg:top-6">
+        <MemoryPanel uid={uid} refreshKey={memBump} />
+      </aside>
+    </div>
   );
 }

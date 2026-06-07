@@ -282,6 +282,15 @@ export async function recallOutcomes(args: {
   return recalled.map((r) => r.record);
 }
 
+/** Raw recall for the memory inspector — keeps blobId/text/distance. */
+export function recallRaw<T>(
+  query: string,
+  namespace: string,
+  opts?: { topK?: number; maxDistance?: number },
+): Promise<RecalledRecord<T>[]> {
+  return recallRecords<T>(query, namespace, opts ?? {});
+}
+
 export function health() {
   return getClient().health();
 }

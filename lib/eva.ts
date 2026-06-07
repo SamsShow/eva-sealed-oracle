@@ -15,16 +15,21 @@ import {
 } from "./football/client";
 import {
   findPrediction,
+  NS,
   recallContext,
   recallOutcomes,
+  recallRaw,
   recordOutcome,
   sealPrediction,
   storeLesson,
   updateDossier,
 } from "./memwal/client";
+import type { RecalledRecord } from "./memwal/client";
 import type {
+  DossierRecord,
   Fixture,
   FinalResult,
+  LessonRecord,
   Outcome,
   OutcomeRecord,
   PredictionRecord,
@@ -363,6 +368,75 @@ export async function revealMatch(matchId: string, uid?: string) {
 }
 
 // ── SCOREBOARD + TIMELINE ────────────────────────────────────────────────────
+
+// ── MEMORY INSPECTOR ─────────────────────────────────────────────────────────
+
+export interface MemorySnapshot {
+  account: string | null;
+  predictions: {
+    eva: RecalledRecord<PredictionRecord>[];
+    user: RecalledRecord<PredictionRecord>[];
+  };
+  lessons: RecalledRecord<LessonRecord>[];
+  dossiers: RecalledRecord<DossierRecord>[];
+  outcomes: {
+    eva: RecalledRecord<OutcomeRecord>[];
+    user: RecalledRecord<OutcomeRecord>[];
+  };
+  total: number;
+}
+
+/** A live read of everything EVA is storing on Walrus, for the inspector. */
+export async function getMemorySnapshot(uid?: string): Promise<MemorySnapshot> {
+  const [evaPreds, userPreds, lessons, evaOut, userOut] = await Promise.all([
+    recallRaw<PredictionRecord>("EVA sealed prediction pick confidence", NS.predictions, { topK: 50 }),
+    uid
+      ? recallRaw<PredictionRecord>("user sealed prediction pick", NS.userPredictions(uid), { topK: 50 })
+      : Promise.resolve([]),
+    recallRaw<LessonRecord>("lesson rule adjustment failure mode", NS.lessons, { topK: 50 }),
+    recallRaw<OutcomeRecord>("outcome result hit miss brier", NS.evaScoreboard, { topK: 50 }),
+    uid
+      ? recallRaw<OutcomeRecord>("outcome result hit miss brier", NS.userScoreboard(uid), { topK: 50 })
+      : Promise.resolve([]),
+  ]);
+
+  const teams = new Set<string>();
+  for (const p of evaPreds) {
+    if (p.record.homeCode) teams.add(p.record.homeCode);
+    if (p.record.awayCode) teams.add(p.record.awayCode);
+  }
+  for (const o of evaOut) {
+    if (o.record.homeCode) teams.add(o.record.homeCode);
+    if (o.record.awayCode) teams.add(o.record.awayCode);
+  }
+  const dossiers = (
+    await Promise.all(
+      [...teams]
+        .slice(0, 8)
+        .map((t) => recallRaw<DossierRecord>(`${t} scouting note form`, NS.dossier(t), { topK: 5 })),
+    )
+  ).flat();
+
+  const total =
+    evaPreds.length +
+    userPreds.length +
+    lessons.length +
+    dossiers.length +
+    evaOut.length +
+    userOut.length;
+
+  return {
+    account:
+      process.env.NEXT_PUBLIC_MEMWAL_ACCOUNT_ID ||
+      process.env.MEMWAL_ACCOUNT_ID ||
+      null,
+    predictions: { eva: evaPreds, user: userPreds },
+    lessons,
+    dossiers,
+    outcomes: { eva: evaOut, user: userOut },
+    total,
+  };
+}
 
 export async function getScoreboard(uid?: string) {
   const [evaOutcomes, userOutcomes] = await Promise.all([
