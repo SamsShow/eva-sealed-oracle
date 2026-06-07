@@ -36,9 +36,15 @@ function Row({ item, dot }: { item: Rec; dot: string }) {
           {lead(item.text)}
         </p>
       </div>
-      <div className="mono mt-1.5 pl-3.5 text-[10px] text-faint">
-        walrus:{item.blobId.slice(0, 14)}…
-      </div>
+      <a
+        href={`https://walruscan.com/mainnet/blob/${item.blobId}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`View on Walruscan: ${item.blobId}`}
+        className="mono mt-1.5 ml-3.5 inline-block text-[10px] text-[color:var(--accent)] hover:underline"
+      >
+        walrus:{item.blobId.slice(0, 14)}… ↗
+      </a>
     </li>
   );
 }
