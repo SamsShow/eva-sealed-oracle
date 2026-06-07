@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f1830"/>
+      <stop offset="1" stop-color="#070a14"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.38" r="0.62">
+      <stop offset="0" stop-color="#1e40af" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#1e40af" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbe4f0"/>
+    </linearGradient>
+    <linearGradient id="eye" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3ee6f6"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#bg)"/>
+  <rect width="64" height="64" rx="15" fill="url(#glow)"/>
+  <!-- EVA's glossy white visor -->
+  <rect x="13" y="18" width="38" height="28" rx="14" fill="url(#body)"/>
+  <rect x="18" y="21" width="28" height="7" rx="3.5" fill="#ffffff" opacity="0.55"/>
+  <!-- angled cyan-blue scan eyes -->
+  <rect x="21.5" y="28" width="9.5" height="6" rx="3" fill="url(#eye)" transform="rotate(13 26.25 31)"/>
+  <rect x="33" y="28" width="9.5" height="6" rx="3" fill="url(#eye)" transform="rotate(-13 37.75 31)"/>
+</svg>
