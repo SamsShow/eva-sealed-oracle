@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root {
+  --eva-bg: #05060a;
+  --eva-scan: #38bdf8;
+  --eva-seed: #34d399;
+}
+
+html,
+body {
+  background: var(--eva-bg);
+  color: #e6edf3;
+  -webkit-font-smoothing: antialiased;
+}
